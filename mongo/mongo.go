@@ -10,8 +10,6 @@ import (
 	"github.com/jonh-dev/go-logger/logger"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-
-	"github.com/jonh-dev/go-goMongo/interfaces"
 )
 
 // MongoORM é uma implementação concreta de IMongoORM
@@ -22,7 +20,7 @@ type MongoORM struct {
 }
 
 // NewMongoORM cria uma nova instância de IMongoORM
-func NewMongoORM(database string) (interfaces.IMongoORM, error) {
+func NewMongoORM(database string) (IMongoORM, error) {
 	uri := os.Getenv("MONGO_URI")
 	if uri == "" {
 		logger.Error("MONGO_URI não definida")
@@ -58,6 +56,40 @@ func (m *MongoORM) Connect() error {
 
 	// Armazena o cliente MongoDB na estrutura MongoORM
 	m.client = client
+
+	return nil
+}
+
+// StartTransaction inicia uma nova sessão de transação e retorna uma instância de SessionContext.
+func (m *MongoORM) StartTransaction() (mongo.SessionContext, error) {
+	session, err := m.client.StartSession()
+	if err != nil {
+		return nil, err
+	}
+
+	err = session.StartTransaction()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := mongo.NewSessionContext(context.Background(), session)
+
+	return ctx, nil
+}
+
+// ExecuteInTransaction executa uma operação dentro de uma transação.
+func (m *MongoORM) ExecuteInTransaction(ts *TransactionSession, collection string, document interface{}, operation func(mongo.SessionContext, string, interface{}) error) error {
+	err := operation(ts.GetSessionContext(), collection, document)
+	if err != nil {
+		ts.AbortTransaction()
+		return err
+	}
+
+	err = ts.CommitTransaction()
+	if err != nil {
+		ts.AbortTransaction()
+		return err
+	}
 
 	return nil
 }
